@@ -50,10 +50,6 @@ namespace Files {
 
         private GLib.FileMonitor monitor;
 
-        public static CompareFunc<Bookmark> compare_with = (a, b) => {
-            return (a.gof_file.location.equal (b.gof_file.location)) && (a.label == b.label) ? 0: 1;
-        };
-
         public static CompareFunc<Bookmark> compare_uris = (a, b) => {
             return a.gof_file.location.equal (b.gof_file.location) ? 0 : 1;
         };

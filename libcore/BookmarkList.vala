@@ -162,7 +162,8 @@ namespace Files {
         }
 
         public bool contains (Files.Bookmark bm) {
-            return (list.find_custom (bm, Files.Bookmark.compare_with) != null);
+            // Only one bookmark per uri allowed
+            return (list.find_custom (bm, Files.Bookmark.compare_uris) != null);
         }
 
         public void delete_item_at (uint index) {
@@ -173,9 +174,6 @@ namespace Files {
             save_bookmarks_file ();
         }
 
-        /* This only renames the first item with a matching uri. This does not matter as Files
-         * only permits one bookmark per uri.
-         */
         public void rename_item_with_uri (string uri, string new_name) {
             foreach (unowned Files.Bookmark bookmark in list) {
                 if (uri == bookmark.uri) {
@@ -186,22 +184,14 @@ namespace Files {
             }
         }
 
-        public void delete_items_with_uri (string uri) {
-            bool list_changed = false;
-            unowned GLib.List<Files.Bookmark> node = list;
-            unowned GLib.List<Files.Bookmark> next = node.next;
-
-            for (node = list; node != null; node = next) {
-                next = node.next;
-                if (uri == node.data.uri) {
-                    list.remove_link (node);
-                    stop_monitoring_bookmark (node.data);
-                    list_changed = true;
+        public void delete_item_with_uri (string uri) {
+            foreach (unowned Files.Bookmark bookmark in list) {
+                if (uri == bookmark.uri) {
+                    stop_monitoring_bookmark (bookmark);
+                    list.remove (bookmark);
+                    save_bookmarks_file ();
+                    return;
                 }
-            }
-
-            if (list_changed) {
-                save_bookmarks_file ();
             }
         }
 
@@ -215,23 +205,16 @@ namespace Files {
         }
 
         public void move_item_uri (string uri, int step) {
-            bool list_changed = false;
             int index = 0;
-
             foreach (unowned Bookmark bm in list) {
                 if (uri == bm.uri) {
                     list.remove (bm);
                     list.insert (bm, index + step);
-                    list_changed = true;
-
-                    break;
+                    save_bookmarks_file ();
+                    return;
                 }
 
                 index++;
-            }
-
-            if (list_changed) {
-                save_bookmarks_file ();
             }
         }
 
@@ -240,7 +223,7 @@ namespace Files {
         }
 
         private void insert_item_internal (Files.Bookmark bm, uint index) {
-            if (this.contains (bm)) {
+            if (this.contains (bm)) { // Only one bookmark per uri allowed
                 return;
             }
             /* Do not insert bookmark for home or filesystem root (already have builtins) */
@@ -284,6 +267,7 @@ namespace Files {
                 catch (GLib.Error error) {
                     critical ("Error loadinging bookmark file %s", error.message);
                 }
+
                 op_processed_call_back ();
             });
         }
@@ -367,7 +351,6 @@ namespace Files {
 
             if (event_type == GLib.FileMonitorEvent.CHANGED ||
                 event_type == GLib.FileMonitorEvent.CREATED) {
-
                 load_bookmarks_file ();
             }
         }
@@ -377,7 +360,7 @@ namespace Files {
         }
 
         private void bookmark_in_list_to_be_deleted_callback (Files.Bookmark bookmark) {
-            delete_items_with_uri (bookmark.uri);
+            delete_item_with_uri (bookmark.uri);
         }
 
         private void start_monitoring_bookmarks_file () {

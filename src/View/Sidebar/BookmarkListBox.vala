@@ -69,7 +69,8 @@ public class Sidebar.BookmarkListBox : Gtk.ListBox, Sidebar.SidebarListInterface
                                                    bool pinned = false,
                                                    bool permanent = false) {
 
-        if (has_uri (uri, null)) { //Should duplicate uris be allowed? Or duplicate labels forbidden?
+        if (has_uri (uri, null)) { // Only one bookmark per uri allowed
+            warning ("Bookmark for %s already exists", uri);
             return null;
         }
 
@@ -114,20 +115,20 @@ public class Sidebar.BookmarkListBox : Gtk.ListBox, Sidebar.SidebarListInterface
         var home_uri = "";
         try {
             home_uri = GLib.Filename.to_uri (PF.UserUtils.get_real_user_home (), null);
-        }
-        catch (ConvertError e) {}
+            if (home_uri != "") {
+                row = add_bookmark (
+                    _("Home"),
+                    home_uri,
+                    new ThemedIcon (Files.ICON_HOME),
+                    true
+                );
 
-        if (home_uri != "") {
-            row = add_bookmark (
-                _("Home"),
-                home_uri,
-                new ThemedIcon (Files.ICON_HOME),
-                true
-            );
-
-            row.set_tooltip_markup (
-                Granite.markup_accel_tooltip ({"<Alt>Home"}, _("View the home folder"))
-            );
+                row.set_tooltip_markup (
+                    Granite.markup_accel_tooltip ({"<Alt>Home"}, _("View the home folder"))
+                );
+            }
+        } catch (ConvertError e) {
+            warning ("Error creating Home bookmark: %s", e.message);
         }
 
         if (Files.FileUtils.protocol_is_supported ("recent")) {
@@ -145,10 +146,14 @@ public class Sidebar.BookmarkListBox : Gtk.ListBox, Sidebar.SidebarListInterface
 
         foreach (unowned Files.Bookmark bm in bookmark_list.list) {
             row = add_bookmark (bm.label, bm.uri, bm.get_icon ());
-            row.set_tooltip_text (Files.FileUtils.sanitize_path (bm.uri, null, false));
-            row.notify["custom-name"].connect (() => {
-                bm.label = row.custom_name;
-            });
+            if (row != null) {
+                row.set_tooltip_text (Files.FileUtils.sanitize_path (bm.uri, null, false));
+                row.notify["custom-name"].connect (() => {
+                    bm.label = row.custom_name;
+                });
+            } else {
+                warning ("Unable to create bookmark for %s", bm.uri);
+            }
         }
 
         if (!Files.is_admin ()) {
@@ -158,17 +163,17 @@ public class Sidebar.BookmarkListBox : Gtk.ListBox, Sidebar.SidebarListInterface
                 trash_monitor.get_icon (),
                 true
             );
+
+            trash_bookmark.set_tooltip_markup (
+                Granite.markup_accel_tooltip ({"<Alt>T"}, _("Open the Trash"))
+            );
+
+            trash_monitor.notify["is-empty"].connect (() => {
+                if (trash_bookmark != null) {
+                    trash_bookmark.update_icon (trash_monitor.get_icon ());
+                }
+            });
         }
-
-        trash_bookmark.set_tooltip_markup (
-            Granite.markup_accel_tooltip ({"<Alt>T"}, _("Open the Trash"))
-        );
-
-        trash_monitor.notify["is-empty"].connect (() => {
-            if (trash_bookmark != null) {
-                trash_bookmark.update_icon (trash_monitor.get_icon ());
-            }
-        });
     }
 
     public virtual void rename_bookmark_by_uri (string uri, string new_name) {
@@ -209,7 +214,7 @@ public class Sidebar.BookmarkListBox : Gtk.ListBox, Sidebar.SidebarListInterface
                     continue;
                 } else if (row.id == id) {
                     remove (row);
-                    bookmark_list.delete_items_with_uri (row.uri); //Assumes no duplicates
+                    bookmark_list.delete_item_with_uri (row.uri);
                     row.destroy_bookmark ();
                     return true;
                 }
