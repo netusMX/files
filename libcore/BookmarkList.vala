@@ -37,7 +37,6 @@ namespace Files {
 
         private static BookmarkList instance = null;
 
-        public signal void contents_changed ();
         public signal void loaded ();
         public signal void deleted ();
 
@@ -331,7 +330,6 @@ namespace Files {
                                                (obj, res) => {
                 try {
                     file.replace_contents_async.end (res, null);
-                    contents_changed ();
                 }
                 catch (GLib.Error error) {
                     warning ("Error replacing bookmarks file contents %s", error.message);
