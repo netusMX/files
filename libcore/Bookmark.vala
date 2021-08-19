@@ -35,8 +35,10 @@ namespace Files {
             }
 
             set {
-                custom_name = value;
-                contents_changed ();
+                if (custom_name != value) {
+                    custom_name = value;
+                    contents_changed ();
+                }
             }
         }
 
@@ -105,7 +107,10 @@ namespace Files {
                     break;
 
                 case GLib.FileMonitorEvent.MOVED:
+                    // Need this test to avoid infinite loop if the bookmark file itself is bookmarked
+                    if (other_file != null && !other_file.equal (get_location ())) {
                         contents_changed ();
+                    }
                     break;
 
                 default:

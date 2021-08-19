@@ -149,7 +149,7 @@ public class Sidebar.BookmarkListBox : Gtk.ListBox, Sidebar.SidebarListInterface
             if (row != null) {
                 row.set_tooltip_text (Files.FileUtils.sanitize_path (bm.uri, null, false));
                 row.notify["custom-name"].connect (() => {
-                    bm.label = row.custom_name;
+                    rename_bookmark_by_uri (row.uri, row.custom_name);
                 });
             } else {
                 warning ("Unable to create bookmark for %s", bm.uri);

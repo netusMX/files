@@ -96,6 +96,7 @@ namespace Files {
                     Files.BookmarkList.bookmarks_file = file;
                     add_special_directories ();
                 }
+
                 save_bookmarks_file ();
             } else {
                 Files.BookmarkList.bookmarks_file = file;
@@ -134,30 +135,14 @@ namespace Files {
             return instance;
         }
 
-        public Bookmark insert_uri (string uri, uint index, string? label = null) {
+        public Bookmark? insert_uri (string uri, uint index, string? label = null) {
             var bm = new Bookmark.from_uri (uri, label);
-            insert_item_internal (bm, index);
-            save_bookmarks_file ();
-            return bm;
-        }
-
-        public Bookmark insert_uri_at_end (string uri, string? label = null) {
-            var bm = new Bookmark.from_uri (uri, label);
-            append_internal (bm);
-            save_bookmarks_file ();
-            return bm;
-        }
-
-        public void insert_uris (GLib.List<string> uris, uint index) {
-            if (index > list.length ()) { // Can be assumed to be limited in length
-                critical ("Bookmarklist: Attempt to insert uri at out of range index");
-                return;
+            if (insert_item_internal (bm, index)) {
+                save_bookmarks_file ();
+                return bm;
+            } else {
+                return null;
             }
-            uris.@foreach ((uri) => {
-                insert_item_internal (new Bookmark.from_uri (uri, null), index);
-                index++;
-            });
-            save_bookmarks_file ();
         }
 
         public bool contains (Files.Bookmark bm) {
@@ -165,19 +150,10 @@ namespace Files {
             return (list.find_custom (bm, Files.Bookmark.compare_uris) != null);
         }
 
-        public void delete_item_at (uint index) {
-            assert (index < list.length ()); // Can be assumed to be limited in length
-            unowned GLib.List<Files.Bookmark> node = list.nth (index);
-            list.remove_link (node);
-            stop_monitoring_bookmark (node.data);
-            save_bookmarks_file ();
-        }
-
         public void rename_item_with_uri (string uri, string new_name) {
             foreach (unowned Files.Bookmark bookmark in list) {
                 if (uri == bookmark.uri) {
-                    bookmark.label = new_name;
-                    save_bookmarks_file ();
+                    bookmark.label = new_name; // Will cause contents changed signal if different
                     return;
                 }
             }
@@ -217,23 +193,24 @@ namespace Files {
             }
         }
 
-        private void append_internal (Files.Bookmark bookmark) {
-            insert_item_internal (bookmark, -1);
+        private bool append_internal (Files.Bookmark bookmark) {
+            return insert_item_internal (bookmark, -1);
         }
 
-        private void insert_item_internal (Files.Bookmark bm, uint index) {
+        private bool insert_item_internal (Files.Bookmark bm, uint index) {
             if (this.contains (bm)) { // Only one bookmark per uri allowed
-                return;
+                return false;
             }
             /* Do not insert bookmark for home or filesystem root (already have builtins) */
             var path = bm.gof_file.location.get_path ();
 
             if ((path == PF.UserUtils.get_real_user_home () || path == Path.DIR_SEPARATOR_S)) {
-                return;
+                return false;
             }
 
             list.insert (bm, (int)index);
             start_monitoring_bookmark (bm);
+            return true;
         }
 
         private void load_bookmarks_file () {
@@ -245,9 +222,11 @@ namespace Files {
         }
 
         private void schedule_job (JobType job) {
-            pending_ops.push_head (job);
-            if (pending_ops.length == 1) {
-                process_next_op ();
+            if (pending_ops.peek_head () != job) {
+                pending_ops.push_head (job);
+                if (pending_ops.length == 1) {
+                    process_next_op ();
+                }
             }
         }
 
@@ -262,8 +241,7 @@ namespace Files {
                         this.call_when_ready = new Files.CallWhenReady (get_gof_file_list (), files_ready);
                         loaded (); /* Call now to ensure sidebar is updated even if call_when_ready blocks */
                     }
-                }
-                catch (GLib.Error error) {
+                } catch (GLib.Error error) {
                     critical ("Error loadinging bookmark file %s", error.message);
                 }
 
@@ -288,6 +266,7 @@ namespace Files {
             list.@foreach (stop_monitoring_bookmark);
 
             uint count = 0;
+            bool result = true;
             string [] lines = contents.split ("\n");
             foreach (string line in lines) {
                 if (line[0] == '\0' || line[0] == ' ') {
@@ -296,9 +275,9 @@ namespace Files {
 
                 string [] parts = line.split (" ", 2);
                 if (parts.length == 2) {
-                    append_internal (new Files.Bookmark.from_uri (parts [0], parts [1]));
+                    result |= append_internal (new Files.Bookmark.from_uri (parts [0], parts [1]));
                 } else {
-                    append_internal (new Files.Bookmark.from_uri (parts [0]));
+                    result |= append_internal (new Files.Bookmark.from_uri (parts [0]));
                 }
 
                 count++;
@@ -306,8 +285,8 @@ namespace Files {
 
             list.@foreach (start_monitoring_bookmark);
 
-            if (list.length () > count) { // Can be assumed to be limited in length
-                /* renew bookmark that was deleted when bookmarks file was changed externally */
+            if (!result || list.length () > count) {
+                /* Save bookmarks if there was a mismatch between the file and the sidebar */
                 save_bookmarks_file ();
             }
         }
@@ -333,8 +312,9 @@ namespace Files {
                 }
                 catch (GLib.Error error) {
                     warning ("Error replacing bookmarks file contents %s", error.message);
+                } finally {
+                    op_processed_call_back ();
                 }
-                op_processed_call_back ();
             });
         }
 
@@ -349,6 +329,7 @@ namespace Files {
 
             if (event_type == GLib.FileMonitorEvent.CHANGED ||
                 event_type == GLib.FileMonitorEvent.CREATED) {
+
                 load_bookmarks_file ();
             }
         }
@@ -395,14 +376,8 @@ namespace Files {
 
         private void process_next_op () {
             stop_monitoring_bookmarks_file ();
-            var pending = pending_ops.pop_tail ();
-            /* if job is SAVE then subsequent pending saves and loads are redundant
-             * if job is LOAD then any pending changes requiring saving will be lost
-             * so we can clear pending jobs */
-            pending_ops.clear ();
-            /* block queue until job processed */
-            pending_ops.push_head (pending);
-
+            var pending = pending_ops.peek_tail (); // Leave on queue until finished
+            /* if job is LOAD then that might cause a save to be required if there are duplicates */
             switch (pending) {
                 case JobType.LOAD:
                     load_bookmarks_file_async ();
@@ -418,7 +393,7 @@ namespace Files {
         }
 
         private void op_processed_call_back () {
-            pending_ops.pop_tail (); /* remove job just completed */
+            pending_ops.pop_tail ();
             if (!pending_ops.is_empty ()) {
                 process_next_op ();
             } else {
