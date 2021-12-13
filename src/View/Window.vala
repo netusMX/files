@@ -60,6 +60,7 @@ namespace Files.View {
         private Gtk.Paned lside_pane;
         public SidebarInterface sidebar;
         public ViewContainer? current_tab = null;
+        public Gtk.MenuBar menubar;
 
         private bool tabs_restored = false;
         private int restoring_tabs = 0;
@@ -170,10 +171,14 @@ namespace Files.View {
             lside_pane.pack1 (sidebar, false, false);
             lside_pane.pack2 (tabs, true, true);
 
+            this.menubar = make_menubar ();
+
             var grid = new Gtk.Grid ();
             grid.attach (top_menu, 0, 0);
-            grid.attach (lside_pane, 0, 1);
+            grid.attach (menubar, 0, 1);
+            grid.attach (lside_pane, 0, 2);
             grid.show_all ();
+            
 
             add (grid);
 
@@ -182,6 +187,70 @@ namespace Files.View {
             get_action ("show-hidden").set_state (prefs.get_boolean ("show-hiddenfiles"));
             get_action ("show-remote-thumbnails").set_state (prefs.get_boolean ("show-remote-thumbnails"));
         }
+
+        private Gtk.MenuBar make_menubar ()
+	{
+		var menubar = new Gtk.MenuBar ();
+
+		/* Create the Movie menu */
+		var movie_menuitem = new Gtk.MenuItem ();
+		movie_menuitem.label = "File";
+		var movie_menu = new Gtk.Menu ();
+		movie_menuitem.set_submenu (movie_menu);
+
+		/* Create the Movie menu items */
+		/* Movie > Open */
+		var movie_open_menuitem = new Gtk.ImageMenuItem.from_stock (Gtk.Stock.OPEN, null);
+		movie_open_menuitem.activate.connect (() => {
+			stdout.printf ("activated\n");
+		});
+		/* Add the Movie menu items */
+		movie_menu.add (movie_open_menuitem);
+
+		/* Create the Edit menu */
+		var edit_menuitem = new Gtk.MenuItem ();
+		edit_menuitem.label = "Edit";
+		var edit_menu = new Gtk.Menu ();
+		edit_menuitem.set_submenu (edit_menu);
+
+		/* Create the Edit menu items */
+		/* Edit > Preferences */
+		var edit_preferences_menuitem = new Gtk.ImageMenuItem.from_stock (Gtk.Stock.PREFERENCES, null);
+		edit_preferences_menuitem.activate.connect (() => {
+			//  var preferences_window = this.preferences_window_constructor (this.plugins);
+			//  preferences_window.show_all ();
+		});
+		/* Add the Edit menu items */
+		edit_menu.add (edit_preferences_menuitem);
+
+        /* Create the Edit menu */
+		var view_menuitem = new Gtk.MenuItem ();
+		view_menuitem.label = "View";
+
+        /* Create the Edit menu */
+		var go_menuitem = new Gtk.MenuItem ();
+		go_menuitem.label = "Go";
+
+        /* Create the Edit menu */
+		var window_menuitem = new Gtk.MenuItem ();
+		window_menuitem.label = "Window";
+
+        /* Create the Edit menu */
+		var help_menuitem = new Gtk.MenuItem ();
+		help_menuitem.label = "Help";
+
+		/* Add the menus to menubar */
+		menubar.add (movie_menuitem);
+		menubar.add (edit_menuitem);
+        menubar.add (view_menuitem);
+        menubar.add (go_menuitem);
+        menubar.add (window_menuitem);
+        menubar.add (help_menuitem);
+
+        Bus.own_name (BusType.SESSION, "demo.black", 0, null, null, null);
+
+		return menubar;
+	}
 
         private void connect_signals () {
             /*/
